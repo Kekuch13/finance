@@ -3,5 +3,7 @@ project(finance)
 
 set(CMAKE_CXX_STANDARD 20)
 
+add_subdirectory(Networking)
+
 add_subdirectory(Client)
 add_subdirectory(Server)
