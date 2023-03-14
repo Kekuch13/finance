@@ -11,5 +11,5 @@ int main() {
         std::cerr << "Error: " << e.what() << std::endl;
         return EXIT_FAILURE;
     }
-    return 0; // мб другой код выхода
+    return EXIT_SUCCESS;
 }
