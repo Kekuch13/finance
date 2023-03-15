@@ -1,4 +1,4 @@
-#API
+## API
 
 HOST: `host = localhost:8080`
 
