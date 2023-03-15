@@ -16,7 +16,7 @@ int main() {
     try {
         std::string host = "127.0.0.1";
         std::string port = "8080";
-        std::string target = "/jrndg/ersfn/getdf/efs.jpg";
+        std::string target = "/";
         int version = 11;
 
         net::io_context ioc;
@@ -27,9 +27,13 @@ int main() {
         stream.connect(results);
 
         while (true) {
-            http::request<http::string_body> req{http::verb::get, target, version};
+            http::request<http::string_body> req{http::verb::post, target, version};
             req.set(http::field::host, host);
             req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
+            req.set(beast::http::field::content_type, "text/plain");
+            req.body() = "blablabla-";
+            req.prepare_payload();
+
             http::write(stream, req);
 
             beast::flat_buffer buffer;
@@ -40,7 +44,7 @@ int main() {
             std::string tmp = "";
             std::cin >> tmp;
             if (tmp == "kek") break;
-            target += tmp;
+            target = "/" + tmp;
         }
 
         //close the socket
