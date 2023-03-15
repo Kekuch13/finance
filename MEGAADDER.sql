@@ -49,3 +49,40 @@ create table income
     CONSTRAINT id_account FOREIGN KEY (id_account) REFERENCES bank_accounts (id_account) ON DELETE CASCADE
 );
 
+INSERT INTO bank_accounts(name_account)
+VALUES ('Sberbank'),
+       ('Tinkoff'),
+       ('VTB');
+
+INSERT INTO expense_categories(name_expense_cat)
+VALUES ('Products'),
+       ('Transport'),
+       ('Cafe'),
+       ('Gift'),
+       ('Subscription'),
+       ('Health');
+
+INSERT INTO income_categories(name_income_cat)
+VALUES ('Salary'),
+       ('Cashback'),
+       ('Parents'),
+       ('Gift'),
+       ('interest on the deposit'),
+       ('Dividends');
+
+INSERT INTO expenses(id_expense_cat, id_account, amount, date, time)
+VALUES (1, 1, 5324, '2022-12-31', '12:40'),
+       (2, 2, 98, '2023-01-29', '13:31'),
+       (3, 3, 1238, '2023-01-12', '16:01'),
+       (4, 1, 7654, '2023-02-21', '22:59'),
+       (5, 2, 365, '2023-02-25', '09:32'),
+       (6, 3, 6570, '2023-03-07', '20:57');
+
+INSERT INTO income(id_income_cat, id_account, amount, date, time)
+VALUES (1, 1, 10000, '2022-12-23', '11:22'),
+       (2, 2, 20000, '2023-01-15', '16:31'),
+       (3, 3, 30000, '2023-01-01', '04:16'),
+       (4, 1, 40000, '2023-02-09', '15:38'),
+       (5, 2, 50000, '2023-02-17', '21:17'),
+       (6, 3, 60000, '2023-03-06', '12:42');
+
