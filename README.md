@@ -1,6 +1,6 @@
 ## API
 
-HOST: `host = localhost:8080`
+HOST: `localhost:8080`
 
 Methods:
 1) POST (data in request body):
