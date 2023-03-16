@@ -26,4 +26,3 @@ int Server::run() {
     }
     return EXIT_SUCCESS;
 };
-

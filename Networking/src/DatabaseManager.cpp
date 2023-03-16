@@ -8,15 +8,14 @@ DatabaseManager::DatabaseManager() : conn(connectionString().c_str()) {
     if (!conn.is_open()) {
         std::cerr << "Can't open database\n";
     }
-};
+}
 
 std::string DatabaseManager::connectionString() const {
     std::string connectionString =
         "host=" + host + " port=" + port + " dbname=" + dbname + " user=" + user + " password=" + password;
     return connectionString;
 }
+
 pqxx::connection &DatabaseManager::GetConn() {
     return conn;
 }
-
-
