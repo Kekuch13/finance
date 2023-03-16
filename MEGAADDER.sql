@@ -6,21 +6,21 @@ drop table if exists income;
 
 create table expense_categories
 (
-    id_expense_cat   serial primary key unique,
-    name_expense_cat varchar(100) not null
+    id_expense_cat serial primary key unique,
+    name           varchar(100) not null
 );
 
 create table income_categories
 (
-    id_income_cat   serial primary key unique,
-    name_income_cat varchar(100) not null
+    id_income_cat serial primary key unique,
+    name          varchar(100) not null
 );
 
 create table bank_accounts
 (
-    id_account     serial primary key unique,
-    name_account   varchar(100)  not null,
-    account_amount int default 0 not null
+    id_account serial primary key unique,
+    name       varchar(100)  not null,
+    amount     int default 0 not null
 );
 
 create table expenses
@@ -31,7 +31,7 @@ create table expenses
     amount         double precision default 0            not null,
     date           date             default CURRENT_DATE not null,
     time           time             default CURRENT_TIME not null,
-    comment        varchar(200),
+    comment        varchar(200)     default NULL,
     CONSTRAINT id_expense_cat FOREIGN KEY (id_expense_cat) REFERENCES expense_categories (id_expense_cat) ON DELETE CASCADE,
     CONSTRAINT id_account FOREIGN KEY (id_account) REFERENCES bank_accounts (id_account) ON DELETE CASCADE
 );
@@ -44,17 +44,17 @@ create table income
     amount        double precision default 0            not null,
     date          date             default CURRENT_DATE not null,
     time          time             default CURRENT_TIME not null,
-    comment       varchar(200),
+    comment       varchar(200)     default NULL,
     CONSTRAINT id_income_cat FOREIGN KEY (id_income_cat) REFERENCES income_categories (id_income_cat) ON DELETE CASCADE,
     CONSTRAINT id_account FOREIGN KEY (id_account) REFERENCES bank_accounts (id_account) ON DELETE CASCADE
 );
 
-INSERT INTO bank_accounts(name_account)
+INSERT INTO bank_accounts(name)
 VALUES ('Sberbank'),
        ('Tinkoff'),
        ('VTB');
 
-INSERT INTO expense_categories(name_expense_cat)
+INSERT INTO expense_categories(name)
 VALUES ('Products'),
        ('Transport'),
        ('Cafe'),
@@ -62,7 +62,7 @@ VALUES ('Products'),
        ('Subscription'),
        ('Health');
 
-INSERT INTO income_categories(name_income_cat)
+INSERT INTO income_categories(name)
 VALUES ('Salary'),
        ('Cashback'),
        ('Parents'),
