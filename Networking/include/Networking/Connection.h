@@ -1,7 +1,10 @@
 //
 // Created by Kekuch13 on 14.03.2023.
 //
+
 #pragma once
+
+#include <Networking/DatabaseManager.h>
 
 #include <iostream>
 #include <cstdlib>
@@ -29,37 +32,41 @@ private:
     tcp::socket socket;
     http::request<http::string_body> req;
     beast::flat_buffer buffer;
+    DatabaseManager dbManager;
 public:
     explicit Connection(net::io_context &ioc);
 
     static std::shared_ptr<Connection> create(net::io_context &ioc);
 
-    tcp::socket &GetSocket() {
-        return socket;
-    }
+    tcp::socket &GetSocket();
 
     void Start();
 private:
-    http::message_generator addAccount();
-    http::message_generator addExpanse();
-    http::message_generator addIncome();
-    http::message_generator addCategory();
+    void bad_request(beast::string_view why); // Returns a bad request response
+    void server_error(beast::string_view what); // Returns a server error response
+    void success(http::status status); // Returns a successful response
 
-    http::message_generator renameAccount();
-    http::message_generator modifyExpanse();
-    http::message_generator modifyIncome();
-    http::message_generator renameCategory();
+    void addAccount();
+    void addExpense();
+    void addIncome();
+    void addCategory();
 
-    http::message_generator getAccount();
-    http::message_generator getExpanse();
-    http::message_generator getIncome();
-    http::message_generator getCategory();
+    void renameAccount();
+    void modifyExpense();
+    void modifyIncome();
+    void renameCategory();
 
-    http::message_generator deleteAccount();
-    http::message_generator deleteExpanse();
-    http::message_generator deleteIncome();
-    http::message_generator deleteCategory();
+    void getAccount();
+    void getExpense();
+    void getIncome();
+    void getCategory();
 
-    http::message_generator handle_request();
-    void sendResponse(http::message_generator& resp);
+    void deleteAccount();
+    void deleteExpense();
+    void deleteIncome();
+    void deleteCategory();
+
+    void handle_request();
+
+    void sendResponse(http::message_generator &&res);
 };
