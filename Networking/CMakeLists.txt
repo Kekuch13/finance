@@ -8,13 +8,14 @@ macro(get_win_hex outvar)
     math(EXPR ${outvar} "(${CMAKE_MATCH_1} << 8) + ${CMAKE_MATCH_2}" OUTPUT_FORMAT HEXADECIMAL)
 endmacro()
 
-if(WIN32)
+if (WIN32)
     get_win_hex(winver)
     add_compile_definitions(_WIN32_WINNT=${winver})
     message("_WIN32_WINNT=${winver}")
-endif()
+endif ()
 
 find_package(Boost 1.81.0 REQUIRED)
+#find_package(libpqxx REQUIRED)
 
 file(GLOB SOURCES src/* src/*/* src/*/*/*)
 add_library(${PROJECT_NAME} ${SOURCES})
@@ -28,3 +29,4 @@ target_include_directories(${PROJECT_NAME}
         )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE ${Boost_LIBRARIES})
+#target_link_libraries(${PROJECT_NAME} LINK_PUBLIC libpqxx::pqxx)

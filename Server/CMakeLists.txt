@@ -3,28 +3,18 @@ project(Server)
 
 set(CMAKE_CXX_STANDARD 20)
 
-macro(get_win_hex outvar)
-    string(REGEX MATCH "^([0-9]+)\\.([0-9]+)" ${outvar} ${CMAKE_SYSTEM_VERSION})
-    math(EXPR ${outvar} "(${CMAKE_MATCH_1} << 8) + ${CMAKE_MATCH_2}" OUTPUT_FORMAT HEXADECIMAL)
-endmacro()
-
-if(WIN32)
-    get_win_hex(winver)
-    add_compile_definitions(_WIN32_WINNT=${winver})
-    message("_WIN32_WINNT=${winver}")
-endif()
+#macro(get_win_hex outvar)
+#    string(REGEX MATCH "^([0-9]+)\\.([0-9]+)" ${outvar} ${CMAKE_SYSTEM_VERSION})
+#    math(EXPR ${outvar} "(${CMAKE_MATCH_1} << 8) + ${CMAKE_MATCH_2}" OUTPUT_FORMAT HEXADECIMAL)
+#endmacro()
+#
+#if(WIN32)
+#    get_win_hex(winver)
+#    add_compile_definitions(_WIN32_WINNT=${winver})
+#    message("_WIN32_WINNT=${winver}")
+#endif()
 
 add_executable(${PROJECT_NAME} main.cpp)
-
-#find_package(Boost 1.81.0 REQUIRED)
-#find_package(libpqxx REQUIRED)
-
-#include_directories(${Boost_INCLUDE_DIR})
-
-target_include_directories(${PROJECT_NAME} PUBLIC Networking)
-
-#target_link_libraries(${PROJECT_NAME} LINK_PUBLIC ${Boost_LIBRARIES})
-#target_link_libraries(${PROJECT_NAME} LINK_PUBLIC libpqxx::pqxx)
 
 target_include_directories(${PROJECT_NAME} PUBLIC Networking)
 
