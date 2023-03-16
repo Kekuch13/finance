@@ -15,7 +15,7 @@ if (WIN32)
 endif ()
 
 find_package(Boost 1.81.0 REQUIRED)
-#find_package(libpqxx REQUIRED)
+find_package(libpqxx REQUIRED)
 
 file(GLOB SOURCES src/* src/*/* src/*/*/*)
 add_library(${PROJECT_NAME} ${SOURCES})
@@ -29,4 +29,4 @@ target_include_directories(${PROJECT_NAME}
         )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE ${Boost_LIBRARIES})
-#target_link_libraries(${PROJECT_NAME} LINK_PUBLIC libpqxx::pqxx)
+target_link_libraries(${PROJECT_NAME} LINK_PUBLIC libpqxx::pqxx)
