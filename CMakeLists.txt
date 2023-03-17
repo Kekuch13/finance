@@ -8,11 +8,11 @@ macro(get_win_hex outvar)
     math(EXPR ${outvar} "(${CMAKE_MATCH_1} << 8) + ${CMAKE_MATCH_2}" OUTPUT_FORMAT HEXADECIMAL)
 endmacro()
 
-if(WIN32)
+if (WIN32)
     get_win_hex(winver)
     add_compile_definitions(_WIN32_WINNT=${winver})
     message("_WIN32_WINNT=${winver}")
-endif()
+endif ()
 
 add_subdirectory(Networking)
 

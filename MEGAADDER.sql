@@ -7,13 +7,13 @@ drop table if exists income;
 create table expense_categories
 (
     id_cat serial primary key unique,
-    name           varchar(100) not null
+    name   varchar(100) not null
 );
 
 create table income_categories
 (
     id_cat serial primary key unique,
-    name          varchar(100) not null
+    name   varchar(100) not null
 );
 
 create table bank_accounts
@@ -25,26 +25,26 @@ create table bank_accounts
 
 create table expenses
 (
-    id_expense     serial primary key unique,
-    id_cat int                                   not null,
-    id_account     int                                   not null,
-    amount         double precision default 0            not null,
-    date           date             default CURRENT_DATE not null,
-    time           time             default CURRENT_TIME not null,
-    comment        varchar(200)     default NULL,
+    id_expense serial primary key unique,
+    id_cat     int                                   not null,
+    id_account int                                   not null,
+    amount     double precision default 0            not null,
+    date       date             default CURRENT_DATE not null,
+    time       time             default CURRENT_TIME not null,
+    comment    varchar(200)     default NULL,
     CONSTRAINT id_expense_cat FOREIGN KEY (id_cat) REFERENCES expense_categories (id_cat) ON DELETE CASCADE,
     CONSTRAINT id_account FOREIGN KEY (id_account) REFERENCES bank_accounts (id_account) ON DELETE CASCADE
 );
 
 create table income
 (
-    id_income     serial primary key unique,
-    id_cat int                                   not null,
-    id_account    int                                   not null,
-    amount        double precision default 0            not null,
-    date          date             default CURRENT_DATE not null,
-    time          time             default CURRENT_TIME not null,
-    comment       varchar(200)     default NULL,
+    id_income  serial primary key unique,
+    id_cat     int                                   not null,
+    id_account int                                   not null,
+    amount     double precision default 0            not null,
+    date       date             default CURRENT_DATE not null,
+    time       time             default CURRENT_TIME not null,
+    comment    varchar(200)     default NULL,
     CONSTRAINT id_income_cat FOREIGN KEY (id_cat) REFERENCES income_categories (id_cat) ON DELETE CASCADE,
     CONSTRAINT id_account FOREIGN KEY (id_account) REFERENCES bank_accounts (id_account) ON DELETE CASCADE
 );
@@ -85,4 +85,3 @@ VALUES (1, 1, 10000, '2022-12-23', '11:22'),
        (4, 1, 40000, '2023-02-09', '15:38'),
        (5, 2, 50000, '2023-02-17', '21:17'),
        (6, 3, 60000, '2023-03-06', '12:42');
-

@@ -7,7 +7,7 @@ int main() {
     try {
         Server server(net::ip::make_address("127.0.0.1"), 8080);
         server.run();
-    } catch (const std::exception& e) {
+    } catch (std::exception &e) {
         std::cerr << "Error: " << e.what() << std::endl;
         return EXIT_FAILURE;
     }

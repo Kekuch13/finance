@@ -5,10 +5,10 @@
 #include <Networking/Server.h>
 
 Server::Server(const net::ip::address &address, unsigned short port)
-        : acceptor{ioc, {address, port}} {};
+    : acceptor{ioc, {address, port}} {};
 
 void Server::AcceptClient() {
-    while(true) {
+    while (true) {
         auto conn = Connection::create(ioc);
 
         acceptor.accept(conn->GetSocket());

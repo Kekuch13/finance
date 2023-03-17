@@ -15,7 +15,7 @@ private:
     net::io_context ioc{1};
     tcp::acceptor acceptor;
 public:
-    Server(const net::ip::address& address, unsigned short port);
+    Server(const net::ip::address &address, unsigned short port);
 
     int run();
 

@@ -67,11 +67,9 @@ private:
     void deleteIncome();
     void deleteCategory();
 
-
     int parseID();
     bool recordExists(int id, std::string &&table);
 
     void handle_request();
-
     void sendResponse(http::message_generator &&res);
 };
