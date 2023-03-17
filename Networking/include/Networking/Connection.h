@@ -19,6 +19,7 @@
 #include <boost/asio.hpp>
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/json_parser.hpp>
+#include <boost/lexical_cast.hpp>
 
 //#include <pqxx/pqxx>
 
@@ -44,17 +45,17 @@ public:
 private:
     void bad_request(beast::string_view why); // Returns a bad request response
     void server_error(beast::string_view what); // Returns a server error response
-    void success(http::status status); // Returns a successful response
+    void success_response(http::status status); // Returns a successful response
 
     void addAccount();
     void addExpense();
     void addIncome();
     void addCategory();
 
-    void renameAccount();
+    void modifyAccount();
     void modifyExpense();
     void modifyIncome();
-    void renameCategory();
+    void modifyCategory();
 
     void getAccount();
     void getExpense();
@@ -65,6 +66,10 @@ private:
     void deleteExpense();
     void deleteIncome();
     void deleteCategory();
+
+
+    int parseID();
+    bool recordExists(int id, std::string &&table);
 
     void handle_request();
 

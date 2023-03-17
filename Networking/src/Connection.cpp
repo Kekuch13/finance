@@ -19,6 +19,8 @@ tcp::socket &Connection::GetSocket() {
 void Connection::Start() {
     beast::error_code ec;
     while (true) {
+        buffer.clear();
+        req.body().clear();
         http::read(socket, buffer, req, ec);
         if (ec == http::error::end_of_stream) {
             break;
@@ -37,16 +39,18 @@ void Connection::sendResponse(http::message_generator &&res) {
     beast::error_code ec;
     beast::write(socket, std::move(res), ec);
 
-    if (ec)
+    if (ec) {
         std::cerr << "Error on writing:" << ec.message();
+    }
 }
 
 void Connection::handle_request() {
-    std::cout << "----------\n" << req.method_string() << std::endl << req.target() << std::endl << req.body() << std::endl;
+    std::cout << "----------\n" << req.method_string() << std::endl << req.target() << std::endl << req.body()
+              << std::endl;
 
     switch (req.method()) {
         case http::verb::post:
-            if (req.target() == "/account") {
+            if (req.target() == "/accounts") {
                 addAccount();
             } else if (req.target() == "/expenses") {
                 addExpense();
@@ -59,20 +63,20 @@ void Connection::handle_request() {
             }
             break;
         case http::verb::put:
-            if (req.target() == "/account") {
-                renameAccount();
+            if (req.target() == "/accounts") {
+                modifyAccount();
             } else if (req.target() == "/expenses") {
                 modifyExpense();
             } else if (req.target() == "/income") {
                 modifyIncome();
             } else if (req.target().starts_with("/categories")) {
-                renameCategory();
+                modifyCategory();
             } else {
                 bad_request("Unknown path");
             }
             break;
         case http::verb::get:
-            if (req.target().starts_with("/account")) {
+            if (req.target().starts_with("/accounts")) {
                 getAccount();
             } else if (req.target().starts_with("/expenses")) {
                 getExpense();
@@ -85,7 +89,7 @@ void Connection::handle_request() {
             }
             break;
         case http::verb::delete_:
-            if (req.target().starts_with("/account")) {
+            if (req.target().starts_with("/accounts")) {
                 deleteAccount();
             } else if (req.target().starts_with("/expenses")) {
                 deleteExpense();
@@ -124,7 +128,7 @@ void Connection::server_error(beast::string_view what) {
     sendResponse(std::move(res));
 }
 
-void Connection::success(http::status status) {
+void Connection::success_response(http::status status) {
     http::response<http::string_body> res(status, req.version());
     res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
     res.set(http::field::content_type, "text/html");
@@ -145,12 +149,9 @@ void Connection::addAccount() {
         boost::property_tree::read_json(jsonEncoded, root);
 
         pqxx::work worker(dbManager.GetConn());
-        dbManager.GetConn().prepare("insert", "INSERT INTO bank_accounts (name) VALUES($1)");
-
-        worker.exec_prepared("insert", root.get<std::string>("name"));
+        worker.exec_prepared("addAccount", root.get<std::string>("name"), root.get<int>("amount", 0));
         worker.commit();
-
-        success(http::status::created);
+        success_response(http::status::created);
     } catch (std::exception &e) {
         bad_request(e.what());
     }
@@ -170,26 +171,27 @@ void Connection::addExpense() {
         std::string curDate = to_simple_string(timeLocal.date());
         std::string curTime = to_simple_string(timeLocal.time_of_day());
 
+        if (!recordExists(root.get<int>("id_account"), "bank_accounts")) {
+            throw std::exception("Account doesn't exist");
+        }
+        if (!recordExists(root.get<int>("id_cat"), "expense_categories")) {
+            throw std::exception("Category doesn't exist");
+        }
+
         pqxx::work worker(dbManager.GetConn());
-        dbManager.GetConn().prepare("insert",
-                                    "INSERT INTO expenses (id_cat, id_account, amount, date, time, comment) "
-                                    "VALUES($1, $2, $3, $4, $5, $6)");
-        worker.exec_prepared("insert",
-                             root.get<int>("id_expense_cat"),
+        worker.exec_prepared("addExpense",
+                             root.get<int>("id_cat"),
                              root.get<int>("id_account"),
                              root.get<int>("amount"),
                              root.get<std::string>("date", curDate),
                              root.get<std::string>("time", curTime),
                              root.get<std::string>("comment", ""));
 
-        dbManager.GetConn().prepare("update",
-                                    "UPDATE bank_accounts SET amount=amount-$1 WHERE id_account=$2");
-        worker.exec_prepared("update",
+        worker.exec_prepared("decreaseAccountAmount",
                              root.get<int>("amount"),
                              root.get<int>("id_account"));
         worker.commit();
-
-        success(http::status::created);
+        success_response(http::status::created);
     } catch (std::exception &e) {
         bad_request(e.what());
     }
@@ -205,15 +207,19 @@ void Connection::addIncome() {
         boost::property_tree::ptree root;
         boost::property_tree::read_json(jsonEncoded, root);
 
+        if (!recordExists(root.get<int>("id_account"), "bank_accounts")) {
+            throw std::exception("Account doesn't exist");
+        }
+        if (!recordExists(root.get<int>("id_cat"), "income_categories")) {
+            throw std::exception("Category doesn't exist");
+        }
+
         boost::posix_time::ptime timeLocal = boost::posix_time::second_clock::local_time();
         std::string curDate = to_simple_string(timeLocal.date());
         std::string curTime = to_simple_string(timeLocal.time_of_day());
 
         pqxx::work worker(dbManager.GetConn());
-        dbManager.GetConn().prepare("insert",
-                                    "INSERT INTO income (id_cat, id_account, amount, date, time, comment) "
-                                    "VALUES($1, $2, $3, $4, $5, $6)");
-        worker.exec_prepared("insert",
+        worker.exec_prepared("addIncome",
                              root.get<int>("id_income_cat"),
                              root.get<int>("id_account"),
                              root.get<int>("amount"),
@@ -221,14 +227,11 @@ void Connection::addIncome() {
                              root.get<std::string>("time", curTime),
                              root.get<std::string>("comment", ""));
 
-        dbManager.GetConn().prepare("update",
-                                    "UPDATE bank_accounts SET amount=amount+$1 WHERE id_account=$2");
-        worker.exec_prepared("update",
+        worker.exec_prepared("increaseAccountAmount",
                              root.get<int>("amount"),
                              root.get<int>("id_account"));
         worker.commit();
-
-        success(http::status::created);
+        success_response(http::status::created);
     } catch (std::exception &e) {
         bad_request(e.what());
     }
@@ -244,27 +247,22 @@ void Connection::addCategory() {
         boost::property_tree::ptree root;
         boost::property_tree::read_json(jsonEncoded, root);
 
-        std::string table;
-        if (req.target().ends_with("income")) {
-            table = "income_categories";
-        } else if (req.target().ends_with("expenses")) {
-            table = "expense_categories";
+        pqxx::work worker(dbManager.GetConn());
+        if (req.target() == "/categories/income") {
+            worker.exec_prepared("addIncomeCategory", root.get<std::string>("name"));
+        } else if (req.target() == "/categories/expenses") {
+            worker.exec_prepared("addExpenseCategory", root.get<std::string>("name"));
         } else {
             throw std::exception("Unknown type of categories");
         }
-
-        pqxx::work worker(dbManager.GetConn());
-        dbManager.GetConn().prepare("insert", "INSERT INTO " + table + " (name) VALUES($1)");
-        worker.exec_prepared("insert", root.get<std::string>("name"));
         worker.commit();
-
-        success(http::status::created);
+        success_response(http::status::created);
     } catch (std::exception &e) {
         bad_request(e.what());
     }
 }
 
-void Connection::renameAccount() {
+void Connection::modifyAccount() {
     try {
         if (req.body().empty()) {
             throw std::exception("Request's body is empty");
@@ -275,11 +273,18 @@ void Connection::renameAccount() {
         boost::property_tree::read_json(jsonEncoded, root);
 
         pqxx::work worker(dbManager.GetConn());
-        dbManager.GetConn().prepare("update", "UPDATE bank_accounts SET name=$1 WHERE id_account=$2");
-        worker.exec_prepared("update", root.get<std::string>("name"), root.get<int>("id_account"));
+        if (!recordExists(root.get<int>("id_account"), "bank_accounts")) {
+            worker.exec_prepared("addAccount", root.get<std::string>("name"), root.get<int>("amount", 0));
+        } else {
+            pqxx::result res = worker.exec_prepared("findAccount", root.get<int>("id_account"));
+            worker.exec_prepared("modifyAccount",
+                                 root.get<std::string>("name"),
+                                 root.get<int>("amount", res[0]["amount"].as<int>()),
+                                 root.get<int>("id_account")
+            );
+        }
         worker.commit();
-
-        success(http::status::ok);
+        success_response(http::status::ok);
     } catch (std::exception &e) {
         bad_request(e.what());
     }
@@ -293,7 +298,7 @@ void Connection::modifyIncome() {
     //to-do
 }
 
-void Connection::renameCategory() {
+void Connection::modifyCategory() {
     try {
         if (req.body().empty()) {
             throw std::exception("Request's body is empty");
@@ -303,25 +308,28 @@ void Connection::renameCategory() {
         boost::property_tree::ptree root;
         boost::property_tree::read_json(jsonEncoded, root);
 
-        std::string table;
-        if (req.target().ends_with("income")) {
-            table = "income_categories";
-        } else if (req.target().ends_with("expenses")) {
-            table = "expenses_categories";
+        pqxx::work worker(dbManager.GetConn());
+        if (req.target() == "/categories/income") {
+            if (recordExists(root.get<int>("id_cat"), "income_categories")) {
+                worker.exec_prepared("modifyIncomeCategory", root.get<std::string>("name"), root.get<int>("id_cat"));
+            } else {
+                worker.exec_prepared("addIncomeCategory", root.get<std::string>("name"));
+            }
+        } else if (req.target() == "/categories/expenses") {
+            if (recordExists(root.get<int>("id_cat"), "expense_categories")) {
+                worker.exec_prepared("modifyExpenseCategory", root.get<std::string>("name"), root.get<int>("id_cat"));
+            } else {
+                worker.exec_prepared("addExpenseCategory", root.get<std::string>("name"));
+            }
         } else {
             throw std::exception("Unknown type of categories");
         }
-
-        pqxx::work worker(dbManager.GetConn());
-        dbManager.GetConn().prepare("update", "UPDATE " + table + " SET name=$1 WHERE id_cat=$2");
-        worker.exec_prepared("update", root.get<std::string>("name"), root.get<int>("id_cat"));
         worker.commit();
-
-        success(http::status::ok);
+        success_response(http::status::ok);
     } catch (std::exception &e) {
         bad_request(e.what());
     }
-};
+}
 
 void Connection::getAccount() {
     //to-do
@@ -333,24 +341,142 @@ void Connection::getExpense() {
 
 void Connection::getIncome() {
     //to-do
-};
+}
 
 void Connection::getCategory() {
     //to-do
 }
 
 void Connection::deleteAccount() {
-    //to-do
+    try {
+        if (!req.target().starts_with("/accounts?=")) {
+            throw std::exception("Incorrect query");
+        }
+
+        int id = parseID();
+        if (!recordExists(id, "bank_accounts")) {
+            throw std::exception("Account doesn't exist");
+        }
+
+        pqxx::work worker(dbManager.GetConn());
+        worker.exec_prepared("deleteAccount", id);
+        worker.commit();
+        success_response(http::status::ok);
+    } catch (boost::bad_lexical_cast &e) {
+        bad_request("ID must be an integer");
+    } catch (std::exception &e) {
+        bad_request(e.what());
+    }
 }
 
 void Connection::deleteExpense() {
-    //to-do
+    try {
+        if (!req.target().starts_with("/expenses?=")) {
+            throw std::exception("Incorrect query");
+        }
+
+        int id = parseID();
+        if (!recordExists(id, "expenses")) {
+            throw std::exception("Expense doesn't exist");
+        }
+
+        pqxx::work worker(dbManager.GetConn());
+        worker.exec_prepared("deleteExpense", id);
+        worker.commit();
+        success_response(http::status::ok);
+    } catch (boost::bad_lexical_cast &e) {
+        bad_request("ID must be an integer");
+    } catch (std::exception &e) {
+        bad_request(e.what());
+    }
 }
 
 void Connection::deleteIncome() {
-    //to-do
+    try {
+        if (!req.target().starts_with("/income?=")) {
+            throw std::exception("Incorrect query");
+        }
+
+        int id = parseID();
+        if (!recordExists(id, "income")) {
+            throw std::exception("Income doesn't exist");
+        }
+
+        pqxx::work worker(dbManager.GetConn());
+        worker.exec_prepared("deleteIncome", id);
+        worker.commit();
+        success_response(http::status::ok);
+    } catch (boost::bad_lexical_cast &e) {
+        bad_request("ID must be an integer");
+    } catch (std::exception &e) {
+        bad_request(e.what());
+    }
 }
 
 void Connection::deleteCategory() {
-    //to-do
+    try {
+        if (!req.target().starts_with("/categories/expenses?=") && !req.target().starts_with("/categories/income?=")) {
+            throw std::exception("Unknown type of categories");
+        }
+
+        int id = parseID();
+        pqxx::work worker(dbManager.GetConn());
+        if (req.target().starts_with("/categories/expenses?=")) {
+            if (!recordExists(id, "expense_categories")) {
+                throw std::exception("Category doesn't exist");
+            }
+            worker.exec_prepared("deleteExpenseCategory", id);
+        } else if (req.target().starts_with("/categories/income?=")) {
+            if (!recordExists(id, "income_categories")) {
+                throw std::exception("Category doesn't exist");
+            }
+            worker.exec_prepared("deleteIncomeCategory", id);
+        } else {
+            throw std::exception("Unknown type of categories");
+        }
+        worker.commit();
+        success_response(http::status::ok);
+    } catch (boost::bad_lexical_cast &e) {
+        bad_request("ID must be an integer");
+    } catch (std::exception &e) {
+        bad_request(e.what());
+    }
+}
+
+int Connection::parseID() {
+    auto pos = req.target().find("?id=");
+    std::string tmp = req.target().substr(pos + 4);
+    if (tmp.empty()) {
+        throw std::exception("Incorrect query");
+    }
+    return boost::lexical_cast<int>(tmp);
+}
+
+bool Connection::recordExists(int id, std::string &&table) {
+    try {
+        pqxx::work worker(dbManager.GetConn());
+        pqxx::result result;
+        if (table == "income_categories") {
+            result = worker.exec_prepared("findIncomeCategory", id);
+        } else if (table == "expense_categories") {
+            result = worker.exec_prepared("findExpenseCategory", id);
+        } else if (table == "expenses") {
+            result = worker.exec_prepared("findExpense", id);
+        } else if (table == "income") {
+            result = worker.exec_prepared("findIncome", id);
+        } else {
+            result = worker.exec_prepared("findAccount", id);
+        }
+
+        worker.commit();
+
+        if (result.size() == 1) {
+            return true;
+        } else {
+            return false;
+        }
+    } catch (std::exception &e) {
+        std::cerr << e.what();
+        return false;
+    }
 }
