@@ -291,11 +291,107 @@ void Connection::modifyAccount() {
 }
 
 void Connection::modifyExpense() {
-    //to-do
+    try {
+        if (req.body().empty()) {
+            throw std::exception("Request's body is empty");
+        }
+
+        std::stringstream jsonEncoded(req.body());
+        boost::property_tree::ptree root;
+        boost::property_tree::read_json(jsonEncoded, root);
+
+        pqxx::work worker(dbManager.GetConn());
+        if (!recordExists(root.get<int>("id_expense"), "expenses")) {
+            boost::posix_time::ptime timeLocal = boost::posix_time::second_clock::local_time();
+            std::string curDate = to_simple_string(timeLocal.date());
+            std::string curTime = to_simple_string(timeLocal.time_of_day());
+
+            worker.exec_prepared("addExpense",
+                                 root.get<int>("id_cat"),
+                                 root.get<int>("id_account"),
+                                 root.get<int>("amount"),
+                                 root.get<std::string>("date", curDate),
+                                 root.get<std::string>("time", curTime),
+                                 root.get<std::string>("comment", ""));
+
+            worker.exec_prepared("decreaseAccountAmount",
+                                 root.get<int>("amount"),
+                                 root.get<int>("id_account"));
+        } else {
+            pqxx::result res = worker.exec_prepared("findExpense", root.get<int>("id_expense"));
+            worker.exec_prepared("modifyExpense",
+                                 root.get<int>("id_cat", res[0]["id_cat"].as<int>()),
+                                 root.get<int>("id_account", res[0]["id_account"].as<int>()),
+                                 root.get<int>("amount", res[0]["amount"].as<int>()),
+                                 root.get<std::string>("date", res[0]["date"].as<std::string>()),
+                                 root.get<std::string>("time", res[0]["time"].as<std::string>()),
+                                 root.get<std::string>("comment", res[0]["comment"].as<std::string>())
+            );
+            worker.exec_prepared("increaseAccountAmount",
+                                 res[0]["amount"].as<int>(),
+                                 res[0]["id_account"].as<int>());
+            worker.exec_prepared("decreaseAccountAmount",
+                                 root.get<int>("amount"),
+                                 root.get<int>("id_account"));
+        }
+        worker.commit();
+        success_response(http::status::ok);
+    } catch (std::exception &e) {
+        bad_request(e.what());
+    }
 }
 
 void Connection::modifyIncome() {
-    //to-do
+    try {
+        if (req.body().empty()) {
+            throw std::exception("Request's body is empty");
+        }
+
+        std::stringstream jsonEncoded(req.body());
+        boost::property_tree::ptree root;
+        boost::property_tree::read_json(jsonEncoded, root);
+
+        pqxx::work worker(dbManager.GetConn());
+        if (!recordExists(root.get<int>("id_income"), "income")) {
+            boost::posix_time::ptime timeLocal = boost::posix_time::second_clock::local_time();
+            std::string curDate = to_simple_string(timeLocal.date());
+            std::string curTime = to_simple_string(timeLocal.time_of_day());
+
+            worker.exec_prepared("addIncome",
+                                 root.get<int>("id_cat"),
+                                 root.get<int>("id_account"),
+                                 root.get<int>("amount"),
+                                 root.get<std::string>("date", curDate),
+                                 root.get<std::string>("time", curTime),
+                                 root.get<std::string>("comment", ""));
+
+            worker.exec_prepared("increaseAccountAmount",
+                                 root.get<int>("amount"),
+                                 root.get<int>("id_account"));
+        } else {
+            pqxx::result res = worker.exec_prepared("findIncome", root.get<int>("id_income"));
+            worker.exec_prepared("modifyIncome",
+                                 root.get<int>("id_cat", res[0]["id_cat"].as<int>()),
+                                 root.get<int>("id_account", res[0]["id_account"].as<int>()),
+                                 root.get<int>("amount", res[0]["amount"].as<int>()),
+                                 root.get<std::string>("date", res[0]["date"].as<std::string>()),
+                                 root.get<std::string>("time", res[0]["time"].as<std::string>()),
+                                 root.get<std::string>("comment", res[0]["comment"].as<std::string>())
+            );
+            worker.exec_prepared("decreaseAccountAmount",
+                                 res[0]["amount"].as<int>(),
+                                 res[0]["id_account"].as<int>()
+            );
+            worker.exec_prepared("increaseAccountAmount",
+                                 root.get<int>("amount"),
+                                 root.get<int>("id_account")
+            );
+        }
+        worker.commit();
+        success_response(http::status::ok);
+    } catch (std::exception &e) {
+        bad_request(e.what());
+    }
 }
 
 void Connection::modifyCategory() {
