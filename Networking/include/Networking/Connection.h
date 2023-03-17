@@ -21,8 +21,6 @@
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/lexical_cast.hpp>
 
-//#include <pqxx/pqxx>
-
 namespace beast = boost::beast;
 namespace http = beast::http;
 namespace net = boost::asio;
