@@ -15,10 +15,10 @@ private:
     std::string dbname = "finance";
     std::string user = "postgres";
     std::string password = "Happy2022";
-
     std::string connectionString() const;
-private:
+
     pqxx::connection conn;
+    void prepare_statements();
 public:
     DatabaseManager();
 
