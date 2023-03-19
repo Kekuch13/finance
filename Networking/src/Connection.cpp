@@ -5,6 +5,7 @@
 #include <Networking/Connection.h>
 
 #include <boost/date_time.hpp>
+#include <sstream>
 
 Connection::Connection(net::io_context &ioc) : socket(ioc), dbManager() {}
 
@@ -45,7 +46,7 @@ void Connection::sendResponse(http::message_generator &&res) {
 }
 
 void Connection::handle_request() {
-    std::cout << "----------\n" << req.method_string() << std::endl << req.target() << std::endl << req.body()
+    std::cout << "\n----------\n" << req.method_string() << std::endl << req.target() << std::endl << req.body()
               << std::endl;
 
     switch (req.method()) {
@@ -83,7 +84,7 @@ void Connection::handle_request() {
             } else if (req.target().starts_with("/income")) {
                 getIncome();
             } else if (req.target().starts_with("/categories")) {
-                getCategory();
+                getByCategory();
             } else {
                 bad_request("Unknown path");
             }
@@ -109,7 +110,7 @@ void Connection::handle_request() {
 void Connection::bad_request(beast::string_view why) {
     http::response<http::string_body> res{http::status::bad_request, req.version()};
     res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
-    res.set(http::field::content_type, "text/html");
+    res.set(http::field::content_type, "text/plain");
     res.keep_alive(req.keep_alive());
     res.body() = std::string(why);
     res.prepare_payload();
@@ -120,7 +121,7 @@ void Connection::bad_request(beast::string_view why) {
 void Connection::server_error(beast::string_view what) {
     http::response<http::string_body> res{http::status::internal_server_error, req.version()};
     res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
-    res.set(http::field::content_type, "text/html");
+    res.set(http::field::content_type, "text/plain");
     res.keep_alive(req.keep_alive());
     res.body() = "An error occurred: '" + std::string(what) + "'";
     res.prepare_payload();
@@ -131,8 +132,19 @@ void Connection::server_error(beast::string_view what) {
 void Connection::success_response(http::status status) {
     http::response<http::string_body> res(status, req.version());
     res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
-    res.set(http::field::content_type, "text/html");
+    res.set(http::field::content_type, "text/plain");
     res.keep_alive(req.keep_alive());
+    res.prepare_payload();
+
+    sendResponse(std::move(res));
+}
+
+void Connection::json_response(beast::string_view &&data) {
+    http::response<http::string_body> res(http::status::ok, req.version());
+    res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
+    res.set(http::field::content_type, "application/json");
+    res.keep_alive(req.keep_alive());
+    res.body() = data;
     res.prepare_payload();
 
     sendResponse(std::move(res));
@@ -428,28 +440,182 @@ void Connection::modifyCategory() {
 }
 
 void Connection::getAccount() {
-    //to-do
+    // возвращает инф-ю о счете
+    try {
+        if (!req.target().starts_with("/accounts?")) {
+            throw std::exception("Incorrect query");
+        }
+
+        auto query = parseQuery();
+        if (!query.contains("id")) {
+            throw std::exception("Incorrect query");
+        }
+        int id = boost::lexical_cast<int>(query["id"]);
+
+        if (!recordExists(id, "bank_accounts")) {
+            throw std::exception("Account doesn't exist");
+        }
+
+        pqxx::work worker(dbManager.GetConn());
+        pqxx::result res = worker.exec_prepared("findAccount", id);
+        worker.commit();
+
+        boost::property_tree::ptree root;
+        root.add_child("account", toJson(res));
+        std::stringstream data;
+        boost::property_tree::write_json(data, root);
+        json_response(data.str());
+    } catch (boost::bad_lexical_cast &e) {
+        bad_request("ID must be an integer");
+    } catch (std::exception &e) {
+        bad_request(e.what());
+    }
 }
 
 void Connection::getExpense() {
-    //to-do
+    // возвращает инф-ю о трате ЛИБО инф-ю о всех тратах за период
+    try {
+        if (!req.target().starts_with("/expenses?")) {
+            throw std::exception("Incorrect query");
+        }
+
+        pqxx::result res;
+        boost::property_tree::ptree root;
+        auto query = parseQuery();
+        if (!query.contains("id")) {
+            if (!query.contains("begin") && !query.contains("end")) {
+                throw std::exception("Incorrect query");
+            }
+            root.put("begin", query["begin"]);
+            root.put("end", query["end"]);
+            pqxx::work worker(dbManager.GetConn());
+            res = worker.exec_prepared("getExpense", query["begin"], query["end"]);
+            worker.commit();
+        } else {
+            int id = boost::lexical_cast<int>(query["id"]);
+
+            if (!recordExists(id, "expenses")) {
+                std::cerr << "\n== " << id << std::endl;
+                throw std::exception("Expense doesn't exist");
+            }
+            pqxx::work worker(dbManager.GetConn());
+            res = worker.exec_prepared("findExpense", id);
+            worker.commit();
+        }
+
+        root.add_child("expenses", toJson(res));
+        std::stringstream data;
+        boost::property_tree::write_json(data, root);
+        json_response(data.str());
+    } catch (boost::bad_lexical_cast &e) {
+        bad_request("ID must be an integer");
+    } catch (std::exception &e) {
+        bad_request(e.what());
+    }
 }
 
 void Connection::getIncome() {
-    //to-do
+    // возвращает инф-ю о доходе ЛИБО инф-ю о всех доходах за период
+    try {
+        if (!req.target().starts_with("/income?")) {
+            throw std::exception("Incorrect query");
+        }
+
+        pqxx::result res;
+        boost::property_tree::ptree root;
+        auto query = parseQuery();
+        if (!query.contains("id")) {
+            if (!query.contains("begin") && !query.contains("end")) {
+                throw std::exception("Incorrect query");
+            }
+            root.put("begin", query["begin"]);
+            root.put("end", query["end"]);
+            pqxx::work worker(dbManager.GetConn());
+            res = worker.exec_prepared("getIncome", query["begin"], query["end"]);
+            worker.commit();
+        } else {
+            int id = boost::lexical_cast<int>(query["id"]);
+
+            if (!recordExists(id, "income")) {
+                std::cerr << "\n== " << id << std::endl;
+                throw std::exception("Income doesn't exist");
+            }
+            pqxx::work worker(dbManager.GetConn());
+            res = worker.exec_prepared("findIncome", id);
+            worker.commit();
+        }
+
+        root.add_child("income", toJson(res));
+        std::stringstream data;
+        boost::property_tree::write_json(data, root);
+        json_response(data.str());
+    } catch (boost::bad_lexical_cast &e) {
+        bad_request("ID must be an integer");
+    } catch (std::exception &e) {
+        bad_request(e.what());
+    }
 }
 
-void Connection::getCategory() {
-    //to-do
+void Connection::getByCategory() {
+    // возвращает инф-ю о тратах/доходах в категории за период
+    try {
+        if (!req.target().starts_with("/categories/expenses?") && !req.target().starts_with("/categories/income?")) {
+            throw std::exception("Unknown type of categories");
+        }
+
+        pqxx::result res;
+        boost::property_tree::ptree root;
+        auto query = parseQuery();
+        if (query.contains("id")) {
+            int id = boost::lexical_cast<int>(query["id"]);
+            if (query.contains("begin") && query.contains("end")) {
+                root.put("id_cat", query["id"]);
+                root.put("begin", query["begin"]);
+                root.put("end", query["end"]);
+                if (req.target().starts_with("/categories/expenses?")) {
+                    if (!recordExists(id, "expense_categories")) {
+                        throw std::exception("Category doesn't exist");
+                    }
+                    pqxx::work worker(dbManager.GetConn());
+                    res = worker.exec_prepared("getByExpenseCategoty", id, query["begin"], query["end"]);
+                    worker.commit();
+                    root.add_child("expenses", toJson(res));
+                } else {
+                    if (!recordExists(id, "income_categories")) {
+                        throw std::exception("Category doesn't exist");
+                    }
+                    pqxx::work worker(dbManager.GetConn());
+                    res = worker.exec_prepared("getByIncomeCategoty", id, query["begin"], query["end"]);
+                    worker.commit();
+                    root.add_child("income", toJson(res));
+                }
+            }
+        } else {
+            throw std::exception("Incorrect query");
+        }
+
+        std::stringstream data;
+        boost::property_tree::write_json(data, root);
+        json_response(data.str());
+    } catch (boost::bad_lexical_cast &e) {
+        bad_request("ID must be an integer");
+    } catch (std::exception &e) {
+        bad_request(e.what());
+    }
 }
 
 void Connection::deleteAccount() {
     try {
-        if (!req.target().starts_with("/accounts?=")) {
+        if (!req.target().starts_with("/accounts?")) {
             throw std::exception("Incorrect query");
         }
 
-        int id = parseID();
+        auto query = parseQuery();
+        if (!query.contains("id")) {
+            throw std::exception("Incorrect query");
+        }
+        int id = boost::lexical_cast<int>(query["id"]);
+
         if (!recordExists(id, "bank_accounts")) {
             throw std::exception("Account doesn't exist");
         }
@@ -467,11 +633,16 @@ void Connection::deleteAccount() {
 
 void Connection::deleteExpense() {
     try {
-        if (!req.target().starts_with("/expenses?=")) {
+        if (!req.target().starts_with("/expenses?")) {
             throw std::exception("Incorrect query");
         }
 
-        int id = parseID();
+        auto query = parseQuery();
+        if (!query.contains("id")) {
+            throw std::exception("Incorrect query");
+        }
+        int id = boost::lexical_cast<int>(query["id"]);
+
         if (!recordExists(id, "expenses")) {
             throw std::exception("Expense doesn't exist");
         }
@@ -489,11 +660,16 @@ void Connection::deleteExpense() {
 
 void Connection::deleteIncome() {
     try {
-        if (!req.target().starts_with("/income?=")) {
+        if (!req.target().starts_with("/income?")) {
             throw std::exception("Incorrect query");
         }
 
-        int id = parseID();
+        auto query = parseQuery();
+        if (!query.contains("id")) {
+            throw std::exception("Incorrect query");
+        }
+        int id = boost::lexical_cast<int>(query["id"]);
+
         if (!recordExists(id, "income")) {
             throw std::exception("Income doesn't exist");
         }
@@ -510,27 +686,35 @@ void Connection::deleteIncome() {
 }
 
 void Connection::deleteCategory() {
+
+    // change category to 'Other'
+
     try {
-        if (!req.target().starts_with("/categories/expenses?=") && !req.target().starts_with("/categories/income?=")) {
+        if (!req.target().starts_with("/categories/expenses?") && !req.target().starts_with("/categories/income?")) {
             throw std::exception("Unknown type of categories");
         }
 
-        int id = parseID();
-        pqxx::work worker(dbManager.GetConn());
-        if (req.target().starts_with("/categories/expenses?=")) {
+        auto query = parseQuery();
+        if (!query.contains("id")) {
+            throw std::exception("Incorrect query");
+        }
+        int id = boost::lexical_cast<int>(query["id"]);
+
+        if (req.target().starts_with("/categories/expenses?")) {
             if (!recordExists(id, "expense_categories")) {
                 throw std::exception("Category doesn't exist");
             }
+            pqxx::work worker(dbManager.GetConn());
             worker.exec_prepared("deleteExpenseCategory", id);
-        } else if (req.target().starts_with("/categories/income?=")) {
+            worker.commit();
+        } else {
             if (!recordExists(id, "income_categories")) {
                 throw std::exception("Category doesn't exist");
             }
+            pqxx::work worker(dbManager.GetConn());
             worker.exec_prepared("deleteIncomeCategory", id);
-        } else {
-            throw std::exception("Unknown type of categories");
+            worker.commit();
         }
-        worker.commit();
         success_response(http::status::ok);
     } catch (boost::bad_lexical_cast &e) {
         bad_request("ID must be an integer");
@@ -539,16 +723,26 @@ void Connection::deleteCategory() {
     }
 }
 
-int Connection::parseID() {
-    auto pos = req.target().find("?id=");
-    std::string tmp = req.target().substr(pos + 4);
-    if (tmp.empty()) {
-        throw std::exception("Incorrect query");
+std::unordered_map<std::string, std::string> Connection::parseQuery() {
+    std::unordered_map<std::string, std::string> query;
+    auto start = req.target().find("?");
+    while (start != std::string::npos) {
+        start++;
+        auto end = req.target().find("&", start);
+        auto pos = req.target().find("=", start);
+        std::string key = req.target().substr(start, pos - start);
+        std::string value = req.target().substr(pos + 1, end - pos - 1);
+        query[key] = value;
+        start = end;
     }
-    return boost::lexical_cast<int>(tmp);
+    if (query.empty()) {
+        throw std::exception("Empty query");
+    }
+    return query;
 }
 
 bool Connection::recordExists(int id, std::string &&table) {
+
     try {
         pqxx::work worker(dbManager.GetConn());
         pqxx::result result;
@@ -575,4 +769,16 @@ bool Connection::recordExists(int id, std::string &&table) {
         std::cerr << e.what();
         return false;
     }
+}
+
+boost::property_tree::ptree Connection::toJson(pqxx::result &res) {
+    boost::property_tree::ptree ptree;
+    for (pqxx::result::size_type i = 0; i < res.size(); ++i) {
+        boost::property_tree::ptree child;
+        for (pqxx::row::size_type j = 0; j < res[0].size(); ++j) {
+            child.put(res.column_name(j), res[i][j]);
+        }
+        ptree.push_back(std::make_pair("", child));
+    }
+    return ptree;
 }

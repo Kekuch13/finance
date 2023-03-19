@@ -44,7 +44,10 @@ void DatabaseManager::prepare_statements() {
     conn.prepare("modifyExpense",
                  "UPDATE expenses SET id_cat=$1, id_account=$2, amount=$3, date=$4, time=$5, comment=$6");
 
-    //для GET
+    conn.prepare("getByIncomeCategoty", "SELECT * FROM income WHERE id_cat=$1 AND date BETWEEN $2 AND $3 ORDER BY date ASC");
+    conn.prepare("getByExpenseCategoty", "SELECT * FROM expenses WHERE id_cat=$1 AND date BETWEEN $2 AND $3 ORDER BY date ASC");
+    conn.prepare("getIncome", "SELECT * FROM income WHERE date BETWEEN $1 AND $2 ORDER BY date ASC");
+    conn.prepare("getExpense", "SELECT * FROM expenses WHERE date BETWEEN $1 AND $2 ORDER BY date ASC");
 
     conn.prepare("deleteAccount", "DELETE FROM bank_accounts WHERE id_account=$1");
     conn.prepare("deleteIncomeCategory", "DELETE FROM income_categories WHERE id_cat=$1");
