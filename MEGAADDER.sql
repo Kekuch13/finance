@@ -55,7 +55,8 @@ VALUES ('Sberbank'),
        ('VTB');
 
 INSERT INTO expense_categories(name)
-VALUES ('Products'),
+VALUES ('Other'),
+       ('Products'),
        ('Transport'),
        ('Cafe'),
        ('Gift'),
@@ -63,7 +64,8 @@ VALUES ('Products'),
        ('Health');
 
 INSERT INTO income_categories(name)
-VALUES ('Salary'),
+VALUES ('Other'),
+       ('Salary'),
        ('Cashback'),
        ('Parents'),
        ('Gift'),
