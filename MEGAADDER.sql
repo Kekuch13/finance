@@ -31,7 +31,7 @@ create table expenses
     amount     double precision default 0            not null,
     date       date             default CURRENT_DATE not null,
     time       time             default CURRENT_TIME not null,
-    comment    varchar(200)     default NULL,
+    comment    varchar(200)     default '',
     CONSTRAINT id_expense_cat FOREIGN KEY (id_cat) REFERENCES expense_categories (id_cat) ON DELETE CASCADE,
     CONSTRAINT id_account FOREIGN KEY (id_account) REFERENCES bank_accounts (id_account) ON DELETE CASCADE
 );
@@ -44,7 +44,7 @@ create table income
     amount     double precision default 0            not null,
     date       date             default CURRENT_DATE not null,
     time       time             default CURRENT_TIME not null,
-    comment    varchar(200)     default NULL,
+    comment    varchar(200)     default '',
     CONSTRAINT id_income_cat FOREIGN KEY (id_cat) REFERENCES income_categories (id_cat) ON DELETE CASCADE,
     CONSTRAINT id_account FOREIGN KEY (id_account) REFERENCES bank_accounts (id_account) ON DELETE CASCADE
 );
