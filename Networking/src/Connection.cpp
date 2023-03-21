@@ -7,6 +7,8 @@
 #include <boost/date_time.hpp>
 #include <sstream>
 
+#define OTHER_CATEGORY_ID 1
+
 Connection::Connection(net::io_context &ioc) : socket(ioc), dbManager() {}
 
 std::shared_ptr<Connection> Connection::create(net::io_context &ioc) {
@@ -161,7 +163,7 @@ void Connection::addAccount() {
         boost::property_tree::read_json(jsonEncoded, root);
 
         pqxx::work worker(dbManager.GetConn());
-        worker.exec_prepared("addAccount", root.get<std::string>("name"), root.get<int>("amount", 0));
+        worker.exec_prepared("addAccount", root.get<std::string>("name"), root.get<int>("amount"));
         worker.commit();
         success_response(http::status::created);
     } catch (std::exception &e) {
@@ -284,19 +286,24 @@ void Connection::modifyAccount() {
         boost::property_tree::ptree root;
         boost::property_tree::read_json(jsonEncoded, root);
 
-        pqxx::work worker(dbManager.GetConn());
-        if (!recordExists(root.get<int>("id_account"), "bank_accounts")) {
-            worker.exec_prepared("addAccount", root.get<std::string>("name"), root.get<int>("amount", 0));
+        if (root.find("id_account") == root.not_found()) {
+            pqxx::work worker(dbManager.GetConn());
+            worker.exec_prepared("addAccount", root.get<std::string>("name"), root.get<int>("amount"));
+            worker.commit();
+            success_response(http::status::created);
+        } else if (!recordExists(root.get<int>("id_account"), "bank_accounts")) {
+            throw std::exception("Account doesn't exist");
         } else {
+            pqxx::work worker(dbManager.GetConn());
             pqxx::result res = worker.exec_prepared("findAccount", root.get<int>("id_account"));
             worker.exec_prepared("modifyAccount",
-                                 root.get<std::string>("name"),
+                                 root.get<std::string>("name", res[0]["name"].as<std::string>()),
                                  root.get<int>("amount", res[0]["amount"].as<int>()),
                                  root.get<int>("id_account")
             );
+            worker.commit();
+            success_response(http::status::ok);
         }
-        worker.commit();
-        success_response(http::status::ok);
     } catch (std::exception &e) {
         bad_request(e.what());
     }
@@ -312,12 +319,12 @@ void Connection::modifyExpense() {
         boost::property_tree::ptree root;
         boost::property_tree::read_json(jsonEncoded, root);
 
-        pqxx::work worker(dbManager.GetConn());
-        if (!recordExists(root.get<int>("id_expense"), "expenses")) {
+        if (root.find("id_expense") == root.not_found()) {
             boost::posix_time::ptime timeLocal = boost::posix_time::second_clock::local_time();
             std::string curDate = to_simple_string(timeLocal.date());
             std::string curTime = to_simple_string(timeLocal.time_of_day());
 
+            pqxx::work worker(dbManager.GetConn());
             worker.exec_prepared("addExpense",
                                  root.get<int>("id_cat"),
                                  root.get<int>("id_account"),
@@ -329,7 +336,20 @@ void Connection::modifyExpense() {
             worker.exec_prepared("decreaseAccountAmount",
                                  root.get<int>("amount"),
                                  root.get<int>("id_account"));
+            worker.commit();
+            success_response(http::status::created);
+        } else if (!recordExists(root.get<int>("id_expense"), "expenses")) {
+            throw std::exception("Expense doesn't exist");
         } else {
+            if (root.find("id_account") != root.not_found()
+                && !recordExists(root.get<int>("id_account"), "bank_accounts")) {
+                throw std::exception("Account doesn't exist");
+            }
+            if (root.find("id_cat") != root.not_found()
+                && !recordExists(root.get<int>("id_cat"), "expense_categories")) {
+                throw std::exception("Category doesn't exist");
+            }
+            pqxx::work worker(dbManager.GetConn());
             pqxx::result res = worker.exec_prepared("findExpense", root.get<int>("id_expense"));
             worker.exec_prepared("modifyExpense",
                                  root.get<int>("id_cat", res[0]["id_cat"].as<int>()),
@@ -337,17 +357,18 @@ void Connection::modifyExpense() {
                                  root.get<int>("amount", res[0]["amount"].as<int>()),
                                  root.get<std::string>("date", res[0]["date"].as<std::string>()),
                                  root.get<std::string>("time", res[0]["time"].as<std::string>()),
-                                 root.get<std::string>("comment", res[0]["comment"].as<std::string>())
+                                 root.get<std::string>("comment", res[0]["comment"].as<std::string>()),
+                                 root.get<int>("id_expense")
             );
             worker.exec_prepared("increaseAccountAmount",
                                  res[0]["amount"].as<int>(),
                                  res[0]["id_account"].as<int>());
             worker.exec_prepared("decreaseAccountAmount",
-                                 root.get<int>("amount"),
-                                 root.get<int>("id_account"));
+                                 root.get<int>("amount", res[0]["amount"].as<int>()),
+                                 root.get<int>("id_account", res[0]["id_account"].as<int>()));
+            worker.commit();
+            success_response(http::status::ok);
         }
-        worker.commit();
-        success_response(http::status::ok);
     } catch (std::exception &e) {
         bad_request(e.what());
     }
@@ -363,12 +384,12 @@ void Connection::modifyIncome() {
         boost::property_tree::ptree root;
         boost::property_tree::read_json(jsonEncoded, root);
 
-        pqxx::work worker(dbManager.GetConn());
-        if (!recordExists(root.get<int>("id_income"), "income")) {
+        if (root.find("id_income") == root.not_found()) {
             boost::posix_time::ptime timeLocal = boost::posix_time::second_clock::local_time();
             std::string curDate = to_simple_string(timeLocal.date());
             std::string curTime = to_simple_string(timeLocal.time_of_day());
 
+            pqxx::work worker(dbManager.GetConn());
             worker.exec_prepared("addIncome",
                                  root.get<int>("id_cat"),
                                  root.get<int>("id_account"),
@@ -380,7 +401,21 @@ void Connection::modifyIncome() {
             worker.exec_prepared("increaseAccountAmount",
                                  root.get<int>("amount"),
                                  root.get<int>("id_account"));
+            worker.commit();
+            success_response(http::status::created);
+            worker.commit();
+        } else if (!recordExists(root.get<int>("id_income"), "income")) {
+            throw std::exception("Income doesn't exist");
         } else {
+            if (root.find("id_account") != root.not_found()
+                && !recordExists(root.get<int>("id_account"), "bank_accounts")) {
+                throw std::exception("Account doesn't exist");
+            }
+            if (root.find("id_cat") != root.not_found()
+                && !recordExists(root.get<int>("id_cat"), "income_categories")) {
+                throw std::exception("Category doesn't exist");
+            }
+            pqxx::work worker(dbManager.GetConn());
             pqxx::result res = worker.exec_prepared("findIncome", root.get<int>("id_income"));
             worker.exec_prepared("modifyIncome",
                                  root.get<int>("id_cat", res[0]["id_cat"].as<int>()),
@@ -388,19 +423,18 @@ void Connection::modifyIncome() {
                                  root.get<int>("amount", res[0]["amount"].as<int>()),
                                  root.get<std::string>("date", res[0]["date"].as<std::string>()),
                                  root.get<std::string>("time", res[0]["time"].as<std::string>()),
-                                 root.get<std::string>("comment", res[0]["comment"].as<std::string>())
-            );
-            worker.exec_prepared("decreaseAccountAmount",
-                                 res[0]["amount"].as<int>(),
-                                 res[0]["id_account"].as<int>()
+                                 root.get<std::string>("comment", res[0]["comment"].as<std::string>()),
+                                 root.get<int>("id_income")
             );
             worker.exec_prepared("increaseAccountAmount",
-                                 root.get<int>("amount"),
-                                 root.get<int>("id_account")
-            );
+                                 root.get<int>("amount", res[0]["amount"].as<int>()),
+                                 root.get<int>("id_account", res[0]["id_account"].as<int>()));
+            worker.exec_prepared("decreaseAccountAmount",
+                                 res[0]["amount"].as<int>(),
+                                 res[0]["id_account"].as<int>());
+            worker.commit();
+            success_response(http::status::ok);
         }
-        worker.commit();
-        success_response(http::status::ok);
     } catch (std::exception &e) {
         bad_request(e.what());
     }
@@ -416,24 +450,43 @@ void Connection::modifyCategory() {
         boost::property_tree::ptree root;
         boost::property_tree::read_json(jsonEncoded, root);
 
-        pqxx::work worker(dbManager.GetConn());
         if (req.target() == "/categories/income") {
-            if (recordExists(root.get<int>("id_cat"), "income_categories")) {
-                worker.exec_prepared("modifyIncomeCategory", root.get<std::string>("name"), root.get<int>("id_cat"));
-            } else {
+            if (root.find("id_cat") == root.not_found()) {
+                pqxx::work worker(dbManager.GetConn());
                 worker.exec_prepared("addIncomeCategory", root.get<std::string>("name"));
+                worker.commit();
+                success_response(http::status::created);
+            } else if (recordExists(root.get<int>("id_cat"), "income_categories")) {
+                if (root.get<int>("id_cat") == OTHER_CATEGORY_ID) {
+                    throw std::exception("This is a service category, it can't be edited");
+                }
+                pqxx::work worker(dbManager.GetConn());
+                worker.exec_prepared("modifyIncomeCategory", root.get<std::string>("name"), root.get<int>("id_cat"));
+                worker.commit();
+                success_response(http::status::ok);
+            } else {
+                throw std::exception("Category doesn't exist");
             }
         } else if (req.target() == "/categories/expenses") {
-            if (recordExists(root.get<int>("id_cat"), "expense_categories")) {
-                worker.exec_prepared("modifyExpenseCategory", root.get<std::string>("name"), root.get<int>("id_cat"));
-            } else {
+            if (root.find("id_cat") == root.not_found()) {
+                pqxx::work worker(dbManager.GetConn());
                 worker.exec_prepared("addExpenseCategory", root.get<std::string>("name"));
+                worker.commit();
+                success_response(http::status::created);
+            } else if (recordExists(root.get<int>("id_cat"), "expense_categories")) {
+                if (root.get<int>("id_cat") == OTHER_CATEGORY_ID) {
+                    throw std::exception("This is a service category, it can't be edited");
+                }
+                pqxx::work worker(dbManager.GetConn());
+                worker.exec_prepared("modifyExpenseCategory", root.get<std::string>("name"), root.get<int>("id_cat"));
+                worker.commit();
+                success_response(http::status::ok);
+            } else {
+                throw std::exception("Category doesn't exist");
             }
         } else {
             throw std::exception("Unknown type of categories");
         }
-        worker.commit();
-        success_response(http::status::ok);
     } catch (std::exception &e) {
         bad_request(e.what());
     }
@@ -495,7 +548,6 @@ void Connection::getExpense() {
             int id = boost::lexical_cast<int>(query["id"]);
 
             if (!recordExists(id, "expenses")) {
-                std::cerr << "\n== " << id << std::endl;
                 throw std::exception("Expense doesn't exist");
             }
             pqxx::work worker(dbManager.GetConn());
@@ -537,7 +589,6 @@ void Connection::getIncome() {
             int id = boost::lexical_cast<int>(query["id"]);
 
             if (!recordExists(id, "income")) {
-                std::cerr << "\n== " << id << std::endl;
                 throw std::exception("Income doesn't exist");
             }
             pqxx::work worker(dbManager.GetConn());
@@ -611,6 +662,7 @@ void Connection::deleteAccount() {
         }
 
         auto query = parseQuery();
+
         if (!query.contains("id")) {
             throw std::exception("Incorrect query");
         }
@@ -638,6 +690,7 @@ void Connection::deleteExpense() {
         }
 
         auto query = parseQuery();
+
         if (!query.contains("id")) {
             throw std::exception("Incorrect query");
         }
@@ -665,6 +718,7 @@ void Connection::deleteIncome() {
         }
 
         auto query = parseQuery();
+
         if (!query.contains("id")) {
             throw std::exception("Incorrect query");
         }
@@ -686,15 +740,13 @@ void Connection::deleteIncome() {
 }
 
 void Connection::deleteCategory() {
-
-    // change category to 'Other'
-
     try {
         if (!req.target().starts_with("/categories/expenses?") && !req.target().starts_with("/categories/income?")) {
             throw std::exception("Unknown type of categories");
         }
 
         auto query = parseQuery();
+
         if (!query.contains("id")) {
             throw std::exception("Incorrect query");
         }
@@ -704,14 +756,22 @@ void Connection::deleteCategory() {
             if (!recordExists(id, "expense_categories")) {
                 throw std::exception("Category doesn't exist");
             }
+            if (id == OTHER_CATEGORY_ID) {
+                throw std::exception("This is a service category, it can't be edited");
+            }
             pqxx::work worker(dbManager.GetConn());
+            worker.exec_prepared("changeExpenseCategoryOther", id);
             worker.exec_prepared("deleteExpenseCategory", id);
             worker.commit();
         } else {
             if (!recordExists(id, "income_categories")) {
                 throw std::exception("Category doesn't exist");
             }
+            if (id == OTHER_CATEGORY_ID) {
+                throw std::exception("This is a service category, it can't be edited");
+            }
             pqxx::work worker(dbManager.GetConn());
+            worker.exec_prepared("changeIncomeCategoryOther", id);
             worker.exec_prepared("deleteIncomeCategory", id);
             worker.commit();
         }

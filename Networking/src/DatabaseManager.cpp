@@ -40,9 +40,9 @@ void DatabaseManager::prepare_statements() {
     conn.prepare("modifyIncomeCategory", "UPDATE income_categories SET name=$1 WHERE id_cat=$2");
     conn.prepare("modifyExpenseCategory", "UPDATE expense_categories SET name=$1 WHERE id_cat=$2");
     conn.prepare("modifyIncome",
-                 "UPDATE income SET id_cat=$1, id_account=$2, amount=$3, date=$4, time=$5, comment=$6");
+                 "UPDATE income SET id_cat=$1, id_account=$2, amount=$3, date=$4, time=$5, comment=$6 WHERE id_income=$7");
     conn.prepare("modifyExpense",
-                 "UPDATE expenses SET id_cat=$1, id_account=$2, amount=$3, date=$4, time=$5, comment=$6");
+                 "UPDATE expenses SET id_cat=$1, id_account=$2, amount=$3, date=$4, time=$5, comment=$6 WHERE id_expense=$7");
 
     conn.prepare("getByIncomeCategoty", "SELECT * FROM income WHERE id_cat=$1 AND date BETWEEN $2 AND $3 ORDER BY date ASC");
     conn.prepare("getByExpenseCategoty", "SELECT * FROM expenses WHERE id_cat=$1 AND date BETWEEN $2 AND $3 ORDER BY date ASC");
@@ -52,6 +52,8 @@ void DatabaseManager::prepare_statements() {
     conn.prepare("deleteAccount", "DELETE FROM bank_accounts WHERE id_account=$1");
     conn.prepare("deleteIncomeCategory", "DELETE FROM income_categories WHERE id_cat=$1");
     conn.prepare("deleteExpenseCategory", "DELETE FROM expense_categories WHERE id_cat=$1");
+    conn.prepare("changeIncomeCategoryOther", "UPDATE income SET id_cat=1 WHERE id_cat=$1");
+    conn.prepare("changeExpenseCategoryOther", "UPDATE expenses SET id_cat=1 WHERE id_cat=$1");
     conn.prepare("deleteIncome", "DELETE FROM income WHERE id_income=$1");
     conn.prepare("deleteExpense", "DELETE FROM expenses WHERE id_expense=$1");
 }
