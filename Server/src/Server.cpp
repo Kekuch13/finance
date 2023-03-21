@@ -2,7 +2,7 @@
 // Created by Kekuch13 on 14.03.2023.
 //
 
-#include <Networking/Server.h>
+#include <Server/Server.h>
 
 Server::Server(const net::ip::address &address, unsigned short port)
     : acceptor{ioc, {address, port}} {};

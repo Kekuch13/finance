@@ -14,6 +14,6 @@ if (WIN32)
     message("_WIN32_WINNT=${winver}")
 endif ()
 
-add_subdirectory(Networking)
-
 add_subdirectory(Server)
+
+add_subdirectory(Application)

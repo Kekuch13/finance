@@ -2,7 +2,7 @@
 // Created by User on 16.03.2023.
 //
 
-#include "Networking/DatabaseManager.h"
+#include "Server/DatabaseManager.h"
 
 DatabaseManager::DatabaseManager() : conn(connectionString().c_str()) {
     if (!conn.is_open()) {

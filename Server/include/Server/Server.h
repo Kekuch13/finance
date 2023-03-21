@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include <Networking/Connection.h>
+#include <Server/Connection.h>
 
 #include <thread>
 

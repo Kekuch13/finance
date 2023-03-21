@@ -2,7 +2,7 @@
 // Created by Kekuch13 on 14.03.2023.
 //
 
-#include <Networking/Connection.h>
+#include <Server/Connection.h>
 
 #include <boost/date_time.hpp>
 #include <sstream>
@@ -493,7 +493,6 @@ void Connection::modifyCategory() {
 }
 
 void Connection::getAccount() {
-    // возвращает инф-ю о счете
     try {
         if (!req.target().starts_with("/accounts?")) {
             throw std::exception("Incorrect query");
@@ -526,7 +525,6 @@ void Connection::getAccount() {
 }
 
 void Connection::getExpense() {
-    // возвращает инф-ю о трате ЛИБО инф-ю о всех тратах за период
     try {
         if (!req.target().starts_with("/expenses?")) {
             throw std::exception("Incorrect query");
@@ -640,6 +638,8 @@ void Connection::getByCategory() {
                     worker.commit();
                     root.add_child("income", toJson(res));
                 }
+            } else {
+                throw std::exception("Incorrect query");
             }
         } else {
             throw std::exception("Incorrect query");

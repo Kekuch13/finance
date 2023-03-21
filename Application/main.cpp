@@ -1,6 +1,6 @@
 #include <iostream>
 
-#include <Networking/Server.h>
+#include <Server/Server.h>
 
 int main() {
     std::cout << "Hello, It's Server!\n";
