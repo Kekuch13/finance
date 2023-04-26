@@ -1,5 +1,7 @@
 ## Cервис c HTTP API для учета личных финансов
 
+Cервис c HTTP API для учета личных финансов (расходы, доходы, банковские счета).
+
 В файле [`MEGAADDER.sql`](MEGAADDER.sql) содержится конфигурация базы данных.
 
 Параметры для подключения к базе данных задаются в файле [`DatabaseManager`](/Server/include/Server/DatabaseManager.h).
