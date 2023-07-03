@@ -1,28 +1,26 @@
-//
-// Created by Kekuch13 on 14.03.2023.
-//
-
 #include <Server/Server.h>
 
 Server::Server(const net::ip::address &address, unsigned short port)
-    : acceptor{ioc, {address, port}} {};
+    : acceptor{ioc, {address, port}}, socket{ioc} {}
 
 void Server::AcceptClient() {
-    while (true) {
-        auto conn = Connection::create(ioc);
-
-        acceptor.accept(conn->GetSocket());
+    acceptor.async_accept(socket, [this](const beast::error_code &error) {
+        auto conn = Connection::create(std::move(socket));
         std::cout << "Client accepted!\n";
-        std::thread(std::bind(&session, conn)).detach();
-    }
-};
+
+        if (!error) conn->start();
+
+        AcceptClient();
+    });
+}
 
 int Server::run() {
     try {
         AcceptClient();
+        ioc.run();
     } catch (const std::exception &e) {
         std::cerr << e.what();
         throw;
     }
     return EXIT_SUCCESS;
-};
+}

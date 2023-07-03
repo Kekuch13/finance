@@ -1,7 +1,3 @@
-//
-// Created by Kekuch13 on 14.03.2023.
-//
-
 #include <Server/Connection.h>
 
 #include <boost/date_time.hpp>
@@ -9,45 +5,58 @@
 
 #define OTHER_CATEGORY_ID 1
 
-Connection::Connection(net::io_context &ioc) : socket(ioc), dbManager() {}
+Connection::Connection(tcp::socket &&socket) : socket(std::move(socket)), dbManager() {}
 
-std::shared_ptr<Connection> Connection::create(net::io_context &ioc) {
-    return std::make_shared<Connection>(ioc);
+std::shared_ptr<Connection> Connection::create(tcp::socket &&socket) {
+    return std::shared_ptr<Connection>(new Connection{std::move(socket)});
 }
 
-tcp::socket &Connection::GetSocket() {
-    return socket;
+void Connection::start() {
+    asyncRead();
 }
 
-void Connection::Start() {
-    beast::error_code ec;
-    while (true) {
-        buffer.clear();
-        req.body().clear();
-        http::read(socket, buffer, req, ec);
-        if (ec == http::error::end_of_stream) {
-            break;
-        }
-        if (ec) {
-            std::cerr << "Fail on reading: " << ec.message() << std::endl;
-            break;
-        }
-        handle_request();
+void Connection::asyncRead() {
+    buffer.clear();
+    req.body().clear();
+    http::async_read(socket, buffer, req, beast::bind_front_handler(&Connection::onRead, shared_from_this()));
+}
+
+void Connection::onRead(const beast::error_code &error, std::size_t bytes_transferred) {
+    if (error == http::error::end_of_stream) {
+        socket.shutdown(tcp::socket::shutdown_send);
+        std::cout << "Connection closed\n";
+        return;
     }
-    socket.shutdown(tcp::socket::shutdown_send, ec);
-    std::cout << "Connection closed\n";
-}
-
-void Connection::sendResponse(http::message_generator &&res) {
-    beast::error_code ec;
-    beast::write(socket, std::move(res), ec);
-
-    if (ec) {
-        std::cerr << "Error on writing:" << ec.message();
+    if (error) {
+        std::cerr << "Fail on reading: " << error.message() << std::endl;
+        return;
     }
+    handleRequest();
 }
 
-void Connection::handle_request() {
+void Connection::asyncWrite(http::message_generator &&msg) {
+    bool keep_alive = msg.keep_alive();
+    beast::async_write(socket, std::move(msg), [self = shared_from_this(), keep_alive](const beast::error_code &error, std::size_t bytes) {
+        self->onWrite(error, bytes, keep_alive);
+    });
+}
+
+void Connection::onWrite(const beast::error_code &error, std::size_t, bool keep_alive) {
+    if (error) {
+        std::cerr << "Fail on writing: " << error.message() << std::endl;
+        return;
+    }
+
+    if (!keep_alive) {
+        socket.shutdown(tcp::socket::shutdown_send);
+        std::cout << "Connection closed\n";
+        return;
+    }
+
+    asyncRead();
+}
+
+void Connection::handleRequest() {
     std::cout << "\n----------\n" << req.method_string() << std::endl << req.target() << std::endl << req.body()
               << std::endl;
 
@@ -62,7 +71,7 @@ void Connection::handle_request() {
             } else if (req.target().starts_with("/categories")) {
                 addCategory();
             } else {
-                bad_request("Unknown path");
+                badRequest("Unknown path");
             }
             break;
         case http::verb::put:
@@ -75,7 +84,7 @@ void Connection::handle_request() {
             } else if (req.target().starts_with("/categories")) {
                 modifyCategory();
             } else {
-                bad_request("Unknown path");
+                badRequest("Unknown path");
             }
             break;
         case http::verb::get:
@@ -88,7 +97,7 @@ void Connection::handle_request() {
             } else if (req.target().starts_with("/categories")) {
                 getByCategory();
             } else {
-                bad_request("Unknown path");
+                badRequest("Unknown path");
             }
             break;
         case http::verb::delete_:
@@ -101,15 +110,15 @@ void Connection::handle_request() {
             } else if (req.target().starts_with("/categories")) {
                 deleteCategory();
             } else {
-                bad_request("Unknown path");
+                badRequest("Unknown path");
             }
             break;
-        default:bad_request("Unknown HTTP-method");
+        default:badRequest("Unknown HTTP-method");
             break;
     }
 }
 
-void Connection::bad_request(beast::string_view why) {
+void Connection::badRequest(beast::string_view why) {
     http::response<http::string_body> res{http::status::bad_request, req.version()};
     res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
     res.set(http::field::content_type, "text/plain");
@@ -117,31 +126,20 @@ void Connection::bad_request(beast::string_view why) {
     res.body() = std::string(why);
     res.prepare_payload();
 
-    sendResponse(std::move(res));
+    asyncWrite(std::move(res));
 }
 
-void Connection::server_error(beast::string_view what) {
-    http::response<http::string_body> res{http::status::internal_server_error, req.version()};
-    res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
-    res.set(http::field::content_type, "text/plain");
-    res.keep_alive(req.keep_alive());
-    res.body() = "An error occurred: '" + std::string(what) + "'";
-    res.prepare_payload();
-
-    sendResponse(std::move(res));
-}
-
-void Connection::success_response(http::status status) {
+void Connection::successResponse(http::status status) {
     http::response<http::string_body> res(status, req.version());
     res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
     res.set(http::field::content_type, "text/plain");
     res.keep_alive(req.keep_alive());
     res.prepare_payload();
 
-    sendResponse(std::move(res));
+    asyncWrite(std::move(res));
 }
 
-void Connection::json_response(beast::string_view &&data) {
+void Connection::jsonResponse(beast::string_view data) {
     http::response<http::string_body> res(http::status::ok, req.version());
     res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
     res.set(http::field::content_type, "application/json");
@@ -149,7 +147,7 @@ void Connection::json_response(beast::string_view &&data) {
     res.body() = data;
     res.prepare_payload();
 
-    sendResponse(std::move(res));
+    asyncWrite(std::move(res));
 }
 
 void Connection::addAccount() {
@@ -165,9 +163,9 @@ void Connection::addAccount() {
         pqxx::work worker(dbManager.GetConn());
         worker.exec_prepared("addAccount", root.get<std::string>("name"), root.get<int>("amount"));
         worker.commit();
-        success_response(http::status::created);
+        successResponse(http::status::created);
     } catch (std::exception &e) {
-        bad_request(e.what());
+        badRequest(e.what());
     }
 }
 
@@ -205,9 +203,9 @@ void Connection::addExpense() {
                              root.get<int>("amount"),
                              root.get<int>("id_account"));
         worker.commit();
-        success_response(http::status::created);
+        successResponse(http::status::created);
     } catch (std::exception &e) {
-        bad_request(e.what());
+        badRequest(e.what());
     }
 }
 
@@ -245,9 +243,9 @@ void Connection::addIncome() {
                              root.get<int>("amount"),
                              root.get<int>("id_account"));
         worker.commit();
-        success_response(http::status::created);
+        successResponse(http::status::created);
     } catch (std::exception &e) {
-        bad_request(e.what());
+        badRequest(e.what());
     }
 }
 
@@ -270,9 +268,9 @@ void Connection::addCategory() {
             throw std::exception("Unknown type of categories");
         }
         worker.commit();
-        success_response(http::status::created);
+        successResponse(http::status::created);
     } catch (std::exception &e) {
-        bad_request(e.what());
+        badRequest(e.what());
     }
 }
 
@@ -290,7 +288,7 @@ void Connection::modifyAccount() {
             pqxx::work worker(dbManager.GetConn());
             worker.exec_prepared("addAccount", root.get<std::string>("name"), root.get<int>("amount"));
             worker.commit();
-            success_response(http::status::created);
+            successResponse(http::status::created);
         } else if (!recordExists(root.get<int>("id_account"), "bank_accounts")) {
             throw std::exception("Account doesn't exist");
         } else {
@@ -302,10 +300,10 @@ void Connection::modifyAccount() {
                                  root.get<int>("id_account")
             );
             worker.commit();
-            success_response(http::status::ok);
+            successResponse(http::status::ok);
         }
     } catch (std::exception &e) {
-        bad_request(e.what());
+        badRequest(e.what());
     }
 }
 
@@ -337,7 +335,7 @@ void Connection::modifyExpense() {
                                  root.get<int>("amount"),
                                  root.get<int>("id_account"));
             worker.commit();
-            success_response(http::status::created);
+            successResponse(http::status::created);
         } else if (!recordExists(root.get<int>("id_expense"), "expenses")) {
             throw std::exception("Expense doesn't exist");
         } else {
@@ -367,10 +365,10 @@ void Connection::modifyExpense() {
                                  root.get<int>("amount", res[0]["amount"].as<int>()),
                                  root.get<int>("id_account", res[0]["id_account"].as<int>()));
             worker.commit();
-            success_response(http::status::ok);
+            successResponse(http::status::ok);
         }
     } catch (std::exception &e) {
-        bad_request(e.what());
+        badRequest(e.what());
     }
 }
 
@@ -402,7 +400,7 @@ void Connection::modifyIncome() {
                                  root.get<int>("amount"),
                                  root.get<int>("id_account"));
             worker.commit();
-            success_response(http::status::created);
+            successResponse(http::status::created);
             worker.commit();
         } else if (!recordExists(root.get<int>("id_income"), "income")) {
             throw std::exception("Income doesn't exist");
@@ -433,10 +431,10 @@ void Connection::modifyIncome() {
                                  res[0]["amount"].as<int>(),
                                  res[0]["id_account"].as<int>());
             worker.commit();
-            success_response(http::status::ok);
+            successResponse(http::status::ok);
         }
     } catch (std::exception &e) {
-        bad_request(e.what());
+        badRequest(e.what());
     }
 }
 
@@ -455,7 +453,7 @@ void Connection::modifyCategory() {
                 pqxx::work worker(dbManager.GetConn());
                 worker.exec_prepared("addIncomeCategory", root.get<std::string>("name"));
                 worker.commit();
-                success_response(http::status::created);
+                successResponse(http::status::created);
             } else if (recordExists(root.get<int>("id_cat"), "income_categories")) {
                 if (root.get<int>("id_cat") == OTHER_CATEGORY_ID) {
                     throw std::exception("This is a service category, it can't be edited");
@@ -463,7 +461,7 @@ void Connection::modifyCategory() {
                 pqxx::work worker(dbManager.GetConn());
                 worker.exec_prepared("modifyIncomeCategory", root.get<std::string>("name"), root.get<int>("id_cat"));
                 worker.commit();
-                success_response(http::status::ok);
+                successResponse(http::status::ok);
             } else {
                 throw std::exception("Category doesn't exist");
             }
@@ -472,7 +470,7 @@ void Connection::modifyCategory() {
                 pqxx::work worker(dbManager.GetConn());
                 worker.exec_prepared("addExpenseCategory", root.get<std::string>("name"));
                 worker.commit();
-                success_response(http::status::created);
+                successResponse(http::status::created);
             } else if (recordExists(root.get<int>("id_cat"), "expense_categories")) {
                 if (root.get<int>("id_cat") == OTHER_CATEGORY_ID) {
                     throw std::exception("This is a service category, it can't be edited");
@@ -480,7 +478,7 @@ void Connection::modifyCategory() {
                 pqxx::work worker(dbManager.GetConn());
                 worker.exec_prepared("modifyExpenseCategory", root.get<std::string>("name"), root.get<int>("id_cat"));
                 worker.commit();
-                success_response(http::status::ok);
+                successResponse(http::status::ok);
             } else {
                 throw std::exception("Category doesn't exist");
             }
@@ -488,7 +486,7 @@ void Connection::modifyCategory() {
             throw std::exception("Unknown type of categories");
         }
     } catch (std::exception &e) {
-        bad_request(e.what());
+        badRequest(e.what());
     }
 }
 
@@ -516,11 +514,11 @@ void Connection::getAccount() {
         root.add_child("account", toJson(res));
         std::stringstream data;
         boost::property_tree::write_json(data, root);
-        json_response(data.str());
+        jsonResponse(data.str());
     } catch (boost::bad_lexical_cast &e) {
-        bad_request("ID must be an integer");
+        badRequest("ID must be an integer");
     } catch (std::exception &e) {
-        bad_request(e.what());
+        badRequest(e.what());
     }
 }
 
@@ -556,11 +554,11 @@ void Connection::getExpense() {
         root.add_child("expenses", toJson(res));
         std::stringstream data;
         boost::property_tree::write_json(data, root);
-        json_response(data.str());
+        jsonResponse(data.str());
     } catch (boost::bad_lexical_cast &e) {
-        bad_request("ID must be an integer");
+        badRequest("ID must be an integer");
     } catch (std::exception &e) {
-        bad_request(e.what());
+        badRequest(e.what());
     }
 }
 
@@ -597,11 +595,11 @@ void Connection::getIncome() {
         root.add_child("income", toJson(res));
         std::stringstream data;
         boost::property_tree::write_json(data, root);
-        json_response(data.str());
+        jsonResponse(data.str());
     } catch (boost::bad_lexical_cast &e) {
-        bad_request("ID must be an integer");
+        badRequest("ID must be an integer");
     } catch (std::exception &e) {
-        bad_request(e.what());
+        badRequest(e.what());
     }
 }
 
@@ -626,7 +624,7 @@ void Connection::getByCategory() {
                         throw std::exception("Category doesn't exist");
                     }
                     pqxx::work worker(dbManager.GetConn());
-                    res = worker.exec_prepared("getByExpenseCategoty", id, query["begin"], query["end"]);
+                    res = worker.exec_prepared("getByExpenseCategory", id, query["begin"], query["end"]);
                     worker.commit();
                     root.add_child("expenses", toJson(res));
                 } else {
@@ -634,7 +632,7 @@ void Connection::getByCategory() {
                         throw std::exception("Category doesn't exist");
                     }
                     pqxx::work worker(dbManager.GetConn());
-                    res = worker.exec_prepared("getByIncomeCategoty", id, query["begin"], query["end"]);
+                    res = worker.exec_prepared("getByIncomeCategory", id, query["begin"], query["end"]);
                     worker.commit();
                     root.add_child("income", toJson(res));
                 }
@@ -647,11 +645,11 @@ void Connection::getByCategory() {
 
         std::stringstream data;
         boost::property_tree::write_json(data, root);
-        json_response(data.str());
+        jsonResponse(data.str());
     } catch (boost::bad_lexical_cast &e) {
-        bad_request("ID must be an integer");
+        badRequest("ID must be an integer");
     } catch (std::exception &e) {
-        bad_request(e.what());
+        badRequest(e.what());
     }
 }
 
@@ -675,11 +673,11 @@ void Connection::deleteAccount() {
         pqxx::work worker(dbManager.GetConn());
         worker.exec_prepared("deleteAccount", id);
         worker.commit();
-        success_response(http::status::ok);
+        successResponse(http::status::ok);
     } catch (boost::bad_lexical_cast &e) {
-        bad_request("ID must be an integer");
+        badRequest("ID must be an integer");
     } catch (std::exception &e) {
-        bad_request(e.what());
+        badRequest(e.what());
     }
 }
 
@@ -703,11 +701,11 @@ void Connection::deleteExpense() {
         pqxx::work worker(dbManager.GetConn());
         worker.exec_prepared("deleteExpense", id);
         worker.commit();
-        success_response(http::status::ok);
+        successResponse(http::status::ok);
     } catch (boost::bad_lexical_cast &e) {
-        bad_request("ID must be an integer");
+        badRequest("ID must be an integer");
     } catch (std::exception &e) {
-        bad_request(e.what());
+        badRequest(e.what());
     }
 }
 
@@ -731,11 +729,11 @@ void Connection::deleteIncome() {
         pqxx::work worker(dbManager.GetConn());
         worker.exec_prepared("deleteIncome", id);
         worker.commit();
-        success_response(http::status::ok);
+        successResponse(http::status::ok);
     } catch (boost::bad_lexical_cast &e) {
-        bad_request("ID must be an integer");
+        badRequest("ID must be an integer");
     } catch (std::exception &e) {
-        bad_request(e.what());
+        badRequest(e.what());
     }
 }
 
@@ -775,11 +773,11 @@ void Connection::deleteCategory() {
             worker.exec_prepared("deleteIncomeCategory", id);
             worker.commit();
         }
-        success_response(http::status::ok);
+        successResponse(http::status::ok);
     } catch (boost::bad_lexical_cast &e) {
-        bad_request("ID must be an integer");
+        badRequest("ID must be an integer");
     } catch (std::exception &e) {
-        bad_request(e.what());
+        badRequest(e.what());
     }
 }
 
@@ -801,18 +799,18 @@ std::unordered_map<std::string, std::string> Connection::parseQuery() {
     return query;
 }
 
-bool Connection::recordExists(int id, std::string &&table) {
+bool Connection::recordExists(int id, const std::string& tableName) {
 
     try {
         pqxx::work worker(dbManager.GetConn());
         pqxx::result result;
-        if (table == "income_categories") {
+        if (tableName == "income_categories") {
             result = worker.exec_prepared("findIncomeCategory", id);
-        } else if (table == "expense_categories") {
+        } else if (tableName == "expense_categories") {
             result = worker.exec_prepared("findExpenseCategory", id);
-        } else if (table == "expenses") {
+        } else if (tableName == "expenses") {
             result = worker.exec_prepared("findExpense", id);
-        } else if (table == "income") {
+        } else if (tableName == "income") {
             result = worker.exec_prepared("findIncome", id);
         } else {
             result = worker.exec_prepared("findAccount", id);
@@ -842,3 +840,4 @@ boost::property_tree::ptree Connection::toJson(pqxx::result &res) {
     }
     return ptree;
 }
+
